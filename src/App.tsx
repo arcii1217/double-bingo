@@ -5,6 +5,7 @@ type Color = 'red' | 'yellow' | 'blue' | 'none';
 type Tile = { front: Color; back: Color; owner: number } | null;
 type Board = Tile[][];
 type GamePhase = 'placement' | 'movement';
+type GameMode = 'pvp' | 'ai';
 
 const COLOR_MAP = {
   red: '#EF4444',
@@ -21,6 +22,8 @@ const DoubleBingoGame = () => {
   const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null);
   const [actionMode, setActionMode] = useState<'place' | 'move' | 'flip' | null>(null);
   const [flipPlacement, setFlipPlacement] = useState(false);
+  const [gameMode, setGameMode] = useState<GameMode>('pvp');
+  const [isAIThinking, setIsAIThinking] = useState(false);
   
   const [player1Tiles, setPlayer1Tiles] = useState({
     yellowRed: 3, blueYellow: 3, redBlue: 3
@@ -34,171 +37,16 @@ const DoubleBingoGame = () => {
   
   const [winner, setWinner] = useState<number | null>(null);
   const [selectedTileType, setSelectedTileType] = useState<string | null>(null);
-  const [isAIThinking, setIsAIThinking] = useState(false);
-
-  // AI 함수들
-  const getEmptyCells = (): [number, number][] => {
-    const empty: [number, number][] = [];
-    for (let i = 0; i < 4; i++) {
-      for (let j = 0; j < 4; j++) {
-        if (!board[i][j]) empty.push([i, j]);
-      }
-    }
-    return empty;
-  };
-
-  const evaluateBoard = (targetColor: Color): number => {
-    let score = 0;
-    
-    // 가로 체크
-    for (let i = 0; i < 4; i++) {
-      const rowColors = board[i].map(cell => cell?.front);
-      const targetCount = rowColors.filter(c => c === targetColor).length;
-      score += targetCount * targetCount;
-    }
-    
-    // 세로 체크
-    for (let j = 0; j < 4; j++) {
-      const colColors = board.map(row => row[j]?.front);
-      const targetCount = colColors.filter(c => c === targetColor).length;
-      score += targetCount * targetCount;
-    }
-    
-    // 대각선 체크
-    const diag1 = board.map((row, i) => row[i]?.front);
-    const diag2 = board.map((row, i) => row[3 - i]?.front);
-    score += diag1.filter(c => c === targetColor).length ** 2;
-    score += diag2.filter(c => c === targetColor).length ** 2;
-    
-    return score;
-  };
-
-  const makeAIMove = () => {
-    setIsAIThinking(true);
-    
-    setTimeout(() => {
-      const tiles = player2Tiles;
-      const targetColor = player2Target;
-      
-      // 착수 가능한 말 찾기
-      const availableTiles: { type: string; front: Color; back: Color }[] = [];
-      if (tiles.yellowRed > 0) {
-        availableTiles.push({ type: 'yellowRed', front: 'yellow', back: 'red' });
-        availableTiles.push({ type: 'yellowRed', front: 'red', back: 'yellow' });
-      }
-      if (tiles.blueYellow > 0) {
-        availableTiles.push({ type: 'blueYellow', front: 'blue', back: 'yellow' });
-        availableTiles.push({ type: 'blueYellow', front: 'yellow', back: 'blue' });
-      }
-      if (tiles.redBlue > 0) {
-        availableTiles.push({ type: 'redBlue', front: 'red', back: 'blue' });
-        availableTiles.push({ type: 'redBlue', front: 'blue', back: 'red' });
-      }
-
-      if (availableTiles.length > 0) {
-        // 착수
-        const emptyCells = getEmptyCells();
-        let bestScore = -1;
-        let bestMove: { row: number; col: number; tile: any } | null = null;
-
-        for (const cell of emptyCells) {
-          for (const tile of availableTiles) {
-            const testBoard = board.map(r => [...r]);
-            testBoard[cell[0]][cell[1]] = { front: tile.front, back: tile.back, owner: 2 };
-            
-            const oldBoard = board;
-            setBoard(testBoard);
-            const score = evaluateBoard(targetColor);
-            setBoard(oldBoard);
-
-            if (score > bestScore) {
-              bestScore = score;
-              bestMove = { row: cell[0], col: cell[1], tile };
-            }
-          }
-        }
-
-        if (bestMove) {
-          const { row, col, tile } = bestMove;
-          const flip = tile.front !== (tile.type === 'yellowRed' ? 'yellow' : tile.type === 'blueYellow' ? 'blue' : 'red');
-          
-          const newBoard = board.map(r => [...r]);
-          newBoard[row][col] = { front: tile.front, back: tile.back, owner: 2 };
-          setBoard(newBoard);
-          
-          setPlayer2Tiles({ ...tiles, [tile.type]: tiles[tile.type as keyof typeof tiles] - 1 });
-          setMoveCount(moveCount + 1);
-          
-          if (moveCount + 1 >= 14) setPhase('movement');
-          
-          setCurrentPlayer(1);
-        }
-      } else if (phase === 'movement') {
-        // 이동 또는 뒤집기 (간단하게 랜덤)
-        const myTiles: [number, number][] = [];
-        for (let i = 0; i < 4; i++) {
-          for (let j = 0; j < 4; j++) {
-            if (board[i][j]?.owner === 2) myTiles.push([i, j]);
-          }
-        }
-        
-        if (Math.random() > 0.5 && myTiles.length > 0) {
-          // 뒤집기
-          const randomTile = myTiles[Math.floor(Math.random() * myTiles.length)];
-          const [row, col] = randomTile;
-          const newBoard = board.map(r => [...r]);
-          const tile = newBoard[row][col]!;
-          newBoard[row][col] = { front: tile.back, back: tile.front, owner: tile.owner };
-          setBoard(newBoard);
-          setCurrentPlayer(1);
-        } else {
-          // 이동
-          const emptyCells = getEmptyCells();
-          if (myTiles.length > 0 && emptyCells.length > 0) {
-            const randomTile = myTiles[Math.floor(Math.random() * myTiles.length)];
-            const [fromRow, fromCol] = randomTile;
-            
-            const adjacentCells = [
-              [fromRow - 1, fromCol], [fromRow + 1, fromCol],
-              [fromRow, fromCol - 1], [fromRow, fromCol + 1]
-            ].filter(([r, c]) => r >= 0 && r < 4 && c >= 0 && c < 4 && !board[r][c]);
-            
-            if (adjacentCells.length > 0) {
-              const [toRow, toCol] = adjacentCells[Math.floor(Math.random() * adjacentCells.length)];
-              const newBoard = board.map(r => [...r]);
-              newBoard[toRow][toCol] = newBoard[fromRow][fromCol];
-              newBoard[fromRow][fromCol] = null;
-              setBoard(newBoard);
-              setCurrentPlayer(1);
-            }
-          }
-        }
-      }
-      
-      setIsAIThinking(false);
-    }, 500);
-  };
-
-  useEffect(() => {
-    if (gameMode === 'ai' && currentPlayer === 2 && !winner && !isAIThinking) {
-      makeAIMove();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPlayer, gameMode, winner]);
 
   const checkBingo = (player: number, targetColor: Color): boolean => {
-    // 가로 체크
     for (let i = 0; i < 4; i++) {
       if (board[i].every(cell => cell?.front === targetColor)) return true;
     }
-    // 세로 체크
     for (let j = 0; j < 4; j++) {
       if (board.every(row => row[j]?.front === targetColor)) return true;
     }
-    // 대각선 체크
     if (board.every((row, i) => row[i]?.front === targetColor)) return true;
     if (board.every((row, i) => row[3 - i]?.front === targetColor)) return true;
-    
     return false;
   };
 
@@ -210,6 +58,276 @@ const DoubleBingoGame = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board]);
+
+  const getEmptyCells = (): [number, number][] => {
+    const empty: [number, number][] = [];
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        if (!board[i][j]) empty.push([i, j]);
+      }
+    }
+    return empty;
+  };
+
+  const evaluateBoard = (testBoard: Board, aiColor: Color, playerColor: Color): number => {
+    let aiScore = 0;
+    let playerScore = 0;
+    
+    // 승리 조건 체크
+    const checkWin = (color: Color): boolean => {
+      for (let i = 0; i < 4; i++) {
+        if (testBoard[i].every(cell => cell?.front === color)) return true;
+      }
+      for (let j = 0; j < 4; j++) {
+        if (testBoard.every(row => row[j]?.front === color)) return true;
+      }
+      if (testBoard.every((row, i) => row[i]?.front === color)) return true;
+      if (testBoard.every((row, i) => row[3 - i]?.front === color)) return true;
+      return false;
+    };
+    
+    if (checkWin(aiColor)) return 10000;
+    if (checkWin(playerColor)) return -10000;
+    
+    // 라인별 점수 계산
+    const evaluateLine = (colors: (Color | undefined)[]): { ai: number; player: number } => {
+      const aiCount = colors.filter(c => c === aiColor).length;
+      const playerCount = colors.filter(c => c === playerColor).length;
+      const emptyCount = colors.filter(c => !c).length;
+      
+      let ai = 0, player = 0;
+      
+      if (aiCount > 0 && playerCount === 0) {
+        ai = aiCount ** 3 + emptyCount * 2;
+      }
+      if (playerCount > 0 && aiCount === 0) {
+        player = playerCount ** 3 + emptyCount * 2;
+      }
+      
+      return { ai, player };
+    };
+    
+    // 가로
+    for (let i = 0; i < 4; i++) {
+      const colors = testBoard[i].map(cell => cell?.front);
+      const score = evaluateLine(colors);
+      aiScore += score.ai;
+      playerScore += score.player;
+    }
+    
+    // 세로
+    for (let j = 0; j < 4; j++) {
+      const colors = testBoard.map(row => row[j]?.front);
+      const score = evaluateLine(colors);
+      aiScore += score.ai;
+      playerScore += score.player;
+    }
+    
+    // 대각선
+    const diag1 = testBoard.map((row, i) => row[i]?.front);
+    const diag2 = testBoard.map((row, i) => row[3 - i]?.front);
+    const score1 = evaluateLine(diag1);
+    const score2 = evaluateLine(diag2);
+    aiScore += score1.ai + score2.ai;
+    playerScore += score1.player + score2.player;
+    
+    return aiScore - playerScore * 1.2; // 방어에 더 가중치
+  };
+
+  const getAllPossibleMoves = (testBoard: Board, player: number, tiles: any) => {
+    const moves: any[] = [];
+    
+    // 착수 가능한 수
+    const availableTiles: { type: string; front: Color; back: Color }[] = [];
+    if (tiles.yellowRed > 0) {
+      availableTiles.push({ type: 'yellowRed', front: 'yellow', back: 'red' });
+      availableTiles.push({ type: 'yellowRed', front: 'red', back: 'yellow' });
+    }
+    if (tiles.blueYellow > 0) {
+      availableTiles.push({ type: 'blueYellow', front: 'blue', back: 'yellow' });
+      availableTiles.push({ type: 'blueYellow', front: 'yellow', back: 'blue' });
+    }
+    if (tiles.redBlue > 0) {
+      availableTiles.push({ type: 'redBlue', front: 'red', back: 'blue' });
+      availableTiles.push({ type: 'redBlue', front: 'blue', back: 'red' });
+    }
+    
+    const emptyCells = getEmptyCells();
+    for (const [row, col] of emptyCells) {
+      for (const tile of availableTiles) {
+        moves.push({ type: 'place', row, col, tile });
+      }
+    }
+    
+    // 이동 가능한 수
+    if (phase === 'movement' || moveCount >= 14) {
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+          if (testBoard[i][j]?.owner === player) {
+            const adjacent = [
+              [i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]
+            ].filter(([r, c]) => r >= 0 && r < 4 && c >= 0 && c < 4 && !testBoard[r][c]);
+            
+            for (const [toRow, toCol] of adjacent) {
+              moves.push({ type: 'move', fromRow: i, fromCol: j, toRow, toCol });
+            }
+          }
+        }
+      }
+      
+      // 뒤집기 가능한 수
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+          if (testBoard[i][j]?.owner === player) {
+            moves.push({ type: 'flip', row: i, col: j });
+          }
+        }
+      }
+    }
+    
+    return moves;
+  };
+
+  const applyMove = (testBoard: Board, move: any, player: number, tiles: any) => {
+    const newBoard = testBoard.map(r => [...r]);
+    const newTiles = { ...tiles };
+    
+    if (move.type === 'place') {
+      newBoard[move.row][move.col] = { front: move.tile.front, back: move.tile.back, owner: player };
+      newTiles[move.tile.type] = newTiles[move.tile.type] - 1;
+    } else if (move.type === 'move') {
+      newBoard[move.toRow][move.toCol] = newBoard[move.fromRow][move.fromCol];
+      newBoard[move.fromRow][move.fromCol] = null;
+    } else if (move.type === 'flip') {
+      const tile = newBoard[move.row][move.col]!;
+      newBoard[move.row][move.col] = { front: tile.back, back: tile.front, owner: tile.owner };
+    }
+    
+    return { newBoard, newTiles };
+  };
+
+  const minimax = (testBoard: Board, depth: number, isMaximizing: boolean, alpha: number, beta: number, aiTiles: any, playerTiles: any, currentMoveCount: number): number => {
+    const aiColor = player2Target;
+    const playerColor = player1Target;
+    
+    const score = evaluateBoard(testBoard, aiColor, playerColor);
+    
+    if (depth === 0 || Math.abs(score) >= 10000) {
+      return score;
+    }
+    
+    if (isMaximizing) {
+      let maxEval = -Infinity;
+      const moves = getAllPossibleMoves(testBoard, 2, aiTiles);
+      
+      for (const move of moves.slice(0, 30)) { // 가지치기: 상위 30개만
+        const { newBoard, newTiles } = applyMove(testBoard, move, 2, aiTiles);
+        const evaluation = minimax(newBoard, depth - 1, false, alpha, beta, newTiles, playerTiles, currentMoveCount + 1);
+        maxEval = Math.max(maxEval, evaluation);
+        alpha = Math.max(alpha, evaluation);
+        if (beta <= alpha) break;
+      }
+      return maxEval;
+    } else {
+      let minEval = Infinity;
+      const moves = getAllPossibleMoves(testBoard, 1, playerTiles);
+      
+      for (const move of moves.slice(0, 30)) {
+        const { newBoard, newTiles } = applyMove(testBoard, move, 1, playerTiles);
+        const evaluation = minimax(newBoard, depth - 1, true, alpha, beta, aiTiles, newTiles, currentMoveCount + 1);
+        minEval = Math.min(minEval, evaluation);
+        beta = Math.min(beta, evaluation);
+        if (beta <= alpha) break;
+      }
+      return minEval;
+    }
+  };
+  const makeAIMove = () => {
+    setIsAIThinking(true);
+    
+    setTimeout(() => {
+      if (winner) {
+        setIsAIThinking(false);
+        return;
+      }
+      
+      const tiles = player2Tiles;
+      const aiColor = player2Target;
+      const playerColor = player1Target;
+      
+      const depth = moveCount < 10 ? 3 : 4; // 후반으로 갈수록 더 깊게 탐색
+      const allMoves = getAllPossibleMoves(board, 2, tiles);
+      
+      if (allMoves.length === 0) {
+        setCurrentPlayer(1);
+        setIsAIThinking(false);
+        return;
+      }
+      
+      let bestMove = null;
+      let bestScore = -Infinity;
+      
+      // 모든 가능한 수를 평가
+      for (const move of allMoves) {
+        const { newBoard, newTiles } = applyMove(board, move, 2, tiles);
+        
+        // 즉시 승리하는 수 체크
+        const score = evaluateBoard(newBoard, aiColor, playerColor);
+        if (score >= 10000) {
+          bestMove = move;
+          break;
+        }
+        
+        // Minimax로 평가
+        const evaluation = minimax(newBoard, depth, false, -Infinity, Infinity, newTiles, player1Tiles, moveCount + 1);
+        
+        if (evaluation > bestScore) {
+          bestScore = evaluation;
+          bestMove = move;
+        }
+      }
+      
+      if (bestMove) {
+        if (bestMove.type === 'place') {
+          const newBoard = board.map(r => [...r]);
+          newBoard[bestMove.row][bestMove.col] = { 
+            front: bestMove.tile.front, 
+            back: bestMove.tile.back, 
+            owner: 2 
+          };
+          setBoard(newBoard);
+          setPlayer2Tiles({ ...tiles, [bestMove.tile.type]: tiles[bestMove.tile.type as keyof typeof tiles] - 1 });
+          setMoveCount(moveCount + 1);
+          if (moveCount + 1 >= 14) setPhase('movement');
+        } else if (bestMove.type === 'move') {
+          const newBoard = board.map(r => [...r]);
+          newBoard[bestMove.toRow][bestMove.toCol] = newBoard[bestMove.fromRow][bestMove.fromCol];
+          newBoard[bestMove.fromRow][bestMove.fromCol] = null;
+          setBoard(newBoard);
+        } else if (bestMove.type === 'flip') {
+          const newBoard = board.map(r => [...r]);
+          const tile = newBoard[bestMove.row][bestMove.col]!;
+          newBoard[bestMove.row][bestMove.col] = { 
+            front: tile.back, 
+            back: tile.front, 
+            owner: tile.owner 
+          };
+          setBoard(newBoard);
+        }
+        
+        setCurrentPlayer(1);
+      }
+      
+      setIsAIThinking(false);
+    }, 1000);
+  };
+
+  useEffect(() => {
+    if (gameMode === 'ai' && currentPlayer === 2 && !winner && !isAIThinking) {
+      makeAIMove();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPlayer, gameMode, winner]);
 
   const placeTile = (row: number, col: number, flip: boolean = false) => {
     if (board[row][col] || !selectedTileType) return;
@@ -280,7 +398,6 @@ const DoubleBingoGame = () => {
     } else if (actionMode === 'move') {
       if (selectedCell) {
         if (selectedCell[0] === row && selectedCell[1] === col) {
-          // 같은 칸 클릭 시 선택 취소
           setSelectedCell(null);
         } else {
           moveTile(row, col);
@@ -305,6 +422,7 @@ const DoubleBingoGame = () => {
     setActionMode(null);
     setSelectedTileType(null);
     setFlipPlacement(false);
+    setIsAIThinking(false);
   };
 
   const TileSelector = ({ player }: { player: number }) => {
@@ -315,7 +433,7 @@ const DoubleBingoGame = () => {
     
     const handleTileSelect = (tileType: string) => {
       setSelectedTileType(tileType);
-      setActionMode(null); // 말 선택 시 이동/뒤집기 모드 해제
+      setActionMode(null);
       setSelectedCell(null);
     };
     
@@ -390,7 +508,7 @@ const DoubleBingoGame = () => {
       
       {winner && (
         <div className="mb-4 p-4 bg-green-500 text-white rounded-lg text-xl font-bold">
-          플레이어 {winner} 승리! (목표색: {winner === 1 ? player1Target : player2Target})
+          {winner === 1 ? '플레이어 1' : (gameMode === 'ai' ? 'AI' : '플레이어 2')} 승리! (목표색: {winner === 1 ? player1Target : player2Target})
         </div>
       )}
       
@@ -408,15 +526,20 @@ const DoubleBingoGame = () => {
       
       <div className="mb-4">
         {currentPlayer === 1 && <TileSelector player={1} />}
-        {currentPlayer === 2 && <TileSelector player={2} />}
+        {currentPlayer === 2 && gameMode === 'pvp' && <TileSelector player={2} />}
       </div>
       
       {phase === 'movement' && (
         <div className="mb-4 flex gap-2">
           <button
             onClick={() => {
-              setActionMode(actionMode === 'move' ? null : 'move');
+              const newMode = actionMode === 'move' ? null : 'move';
+              setActionMode(newMode);
               setSelectedCell(null);
+              if (newMode === 'move') {
+                setSelectedTileType(null);
+                setFlipPlacement(false);
+              }
             }}
             className={`px-4 py-2 rounded flex items-center gap-2 ${actionMode === 'move' ? 'bg-blue-500 text-white' : 'bg-white'}`}
           >
@@ -424,8 +547,13 @@ const DoubleBingoGame = () => {
           </button>
           <button
             onClick={() => {
-              setActionMode(actionMode === 'flip' ? null : 'flip');
+              const newMode = actionMode === 'flip' ? null : 'flip';
+              setActionMode(newMode);
               setSelectedCell(null);
+              if (newMode === 'flip') {
+                setSelectedTileType(null);
+                setFlipPlacement(false);
+              }
             }}
             className={`px-4 py-2 rounded flex items-center gap-2 ${actionMode === 'flip' ? 'bg-purple-500 text-white' : 'bg-white'}`}
           >
